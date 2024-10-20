@@ -3,9 +3,10 @@
 // realloc() -
 // free() -
 
-#include "stdio.h"
-#include "unistd.h"
+#include <stdio.h>
+#include <unistd.h>
 #include <pthread.h>
+#include <string.h>
 
 struct header_t {
     size_t size;
@@ -73,4 +74,69 @@ void *malloc(size_t size){
     return (void*)(header + 1);
 }
 
-// ToDo free()
+
+void free(void *block) {
+    header_t *header, *tmp;
+    void *prgbreak;
+    if(!block)
+        return;
+    pthread_mutex_lock(&global_malloc_lock);
+    header = (header_t*)block - 1;
+    prgbreak = sbrk(0);
+    if ((char*)block + header->s.size == prgbreak) {
+        if (head == tail)
+            head = tail = NULL;
+        else {
+            tmp = head;
+            while(tmp) {
+                if(tmp->s.next == tail) {
+                    tmp->s.next = NULL;
+                    tail = tmp;
+                }
+                tmp = tmp->s.next;
+            }
+        }
+        sbrk(0 - sizeof(header_t) - header->s.size);
+        pthread_mutex_unlock(&global_malloc_lock);
+        return;
+    }
+    header->s.is_free = 1;
+    pthread_mutex_unlock(&global_malloc_lock);
+}
+
+void *calloc(size_t num, size_t nsize) {
+    size_t size;
+    void *block;
+    if(!num || !nsize)
+        return NULL;
+    block = malloc(size);
+    if(!block)
+        return NULL;
+    memset(block, 0, size);
+    return block;
+}
+
+void *realloc(void *block, size_t size) {
+    header_t *header;
+    void *ret;
+    if(!block || !size)
+        return malloc(size);
+    header = (header_t*)block - 1;
+    if(header->s.size >= size)
+        return block;
+    ret = malloc(size);
+    if (ret) {
+        memcpy(ret, block, head->s.size);
+        free(block);
+    }
+    return ret;
+}
+
+void memlistOutput() {
+    header_t *curr = head;
+    printf("head = %p tail = %p \n", (void*)head, (void*)tail);
+    while(curr) {
+        printf("addres = %p sizee = %zu free=%u next=%p\n", (void*)curr, curr->s.size, curr->s.is_free, (void*)curr->s.next);
+        curr = curr->s.next;
+    }
+}
